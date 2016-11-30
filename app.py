@@ -7,15 +7,45 @@ application = Flask(__name__)
 
 client = MongoClient('localhost:27017')
 db = client.MachineData
+mytoken = openstack.getAdminToken()
+
+#following API are available
+
+# def getToken(userName, password, projectName):
+# def getAdminToken():
+# def getUserToken(userName, password, projectName = "admin"):
+
+# def listOfServer(mytoken):
+# def listOfFlavors(mytoken):
+# def listOfImages(mytoken):
+# def listOfProjects(mytoken):
+# def listOfUsers(mytoken):
+# def listOfNetworks(mytoken):
+
+# def createNewProject(mytoken, projectName, projectDescription):
+# def createNewUser(mytoken, userName, password):
+# def createNewServer(mytoken, vmName):
+
+# def instanceAction(mytoken, instanceId, action):
+
+# def startInstance(mytoken, instanceId):
+# def stopInstance(mytoken, instanceId):
+# def pauseInstance(mytoken, instanceId):
+# def unpauseInstance(mytoken, instanceId):
+# def suspendInstance(mytoken, instanceId):
+# def resumeInstance(mytoken, instanceId):
+# def deleteInstance(mytoken, instanceId):
 
 @application.route('/testApp',methods=['POST'])
 def testApp():
     try:      
-		#reply = openstack.listOfFlavors();
-		#reply = openstack.createNewServer("fromAPI2");
-		#reply = openstack.startInstance("57360fe3-f771-433a-ad6b-bc38c9a6eac7");
-		#reply = openstack.listOfProjects();
-		return json.dumps(reply);
+        #reply = openstack.listOfFlavors();
+        #reply = openstack.createNewServer("fromAPI2");
+        #reply = openstack.startInstance("57360fe3-f771-433a-ad6b-bc38c9a6eac7");
+        #reply = openstack.listOfProjects();
+        mytoken = openstack.getAdminToken();
+        reply = openstack.listOfServer(mytoken);
+        return json.dumps(reply);
     except Exception, e:
         return str(e);
 
@@ -23,16 +53,17 @@ def testApp():
 def addMachine():
     try:		
         json_data = request.json['info']
-        deviceName = json_data['device']
-        ipAddress = json_data['ip']
-        userName = json_data['username']
-        password = json_data['password']
-        portNumber = json_data['port']	
-	openstack.createNewServer(deviceName)
-	#openstack.listOfServer()
-
+        instanceName = json_data['instanceName']
+        flavorId = json_data['flavor']['id']
+        imageId = json_data['image']['id']
+        networkId = json_data['network']['id']
+        print instanceName
+        print flavorId
+        print imageId
+        print networkId
+        openstack.createNewServer(mytoken, instanceName, flavorId, imageId, networkId)
         db.Machines.insert_one({
-            'device':deviceName,'ip':ipAddress,'username':userName,'password':password,'port':portNumber
+            'device':instanceName,'ip':flavorId,'username':imageId,'password':networkId,'port':networkId
             })
         return jsonify(status='OK',message='inserted successfully')
 
@@ -90,37 +121,43 @@ def updateMachine():
 @application.route("/getMachineList",methods=['POST'])
 def getMachineList():
     try:
-        machines = db.Machines.find()
-#		openstack.createNewServer(deviceName)
-	serverList = openstack.listOfServer();
+        serverInfo = openstack.listOfServer(mytoken)
+        flavorInfo = openstack.listOfFlavors(mytoken)
+        imageInfo = openstack.listOfImages(mytoken)
+        networkInfo = openstack.listOfNetworks(mytoken)
         machineList = []
-		
-	for server in serverList['servers']:
-		print server
-		machineItem = {
-				'device':server['name'],
-				'ip':server['status'],
-				'username':server['OS-SRV-USG:launched_at'],
-				'password':server['OS-EXT-AZ:availability_zone'],
-				'port':server['OS-DCF:diskConfig'],
-				'id': server['OS-EXT-SRV-ATTR:host']
-				}
-		machineList.append(machineItem)
+        flavorList = []
+        imageList = []
+        networkList = []
+        for server in serverInfo['servers']:
+            machineItem = {
+                'name':server['name'],
+                'image_name':server['image']['id'],
+                'ip_address':server['OS-SRV-USG:launched_at'],
+                'flavor':server['flavor']['id'],
+                'status':server['status'],
+                'zone': server['OS-EXT-AZ:availability_zone'],
+                'task': server['OS-EXT-STS:task_state'],
+                'id': server['id']
+                }
+            machineList.append(machineItem)
 			
-        # for machine in machines:
-            # print machine
-            # machineItem = {
-                    # 'device':machine['device'],
-                    # 'ip':machine['ip'],
-                    # 'username':machine['username'],
-                    # 'password':machine['password'],
-                    # 'port':machine['port'],
-                    # 'id': str(machine['_id'])
-                    # }
-            # machineList.append(machineItem)
+        for flavor in flavorInfo['flavors']:
+            flavorItem = {'name':flavor['name'], 'id': flavor['id']}
+            flavorList.append(flavorItem)
+
+        for image in imageInfo['images']:
+			imageItem = {'name':image['name'], 'id': image['id']}
+			imageList.append(imageItem)
+
+        for network in networkInfo['networks']:
+            networkItem = {'name':network['name'], 'id': network['id']}
+            networkList.append(networkItem)
+
+        stackInfo = {'servers':machineList, 'flavors':flavorList, 'images':imageList, 'networks':networkList}
     except Exception,e:
-        return str(e)
-    return json.dumps(machineList)
+            return str(e)
+    return json.dumps(stackInfo)
 
 @application.route("/execute",methods=['POST'])
 def execute():
@@ -150,20 +187,20 @@ def execute():
 def deleteMachine():
     try:
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
+        print machineId     
+        response = openstack.deleteInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
-#added by abhijeet (remove cocmment later on)
+
 
 @application.route("/resumemachine",methods=['POST'])
 def resumeMachine():
     try:
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId      
+        response = openstack.resumeInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
 
@@ -172,22 +209,19 @@ def resumeMachine():
 def suspendMachine():
     try:
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId
+        response = openstack.suspendInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
 
 @application.route("/unpausemachine",methods=['POST'])
 def unpauseMachine():
     try:
-
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId
+        response = openstack.unpauseInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
 
@@ -195,12 +229,10 @@ def unpauseMachine():
 @application.route("/pausemachine",methods=['POST'])
 def pauseMachine():
     try:
-
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId       
+        response = openstack.pauseInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
 
@@ -208,25 +240,20 @@ def pauseMachine():
 @application.route("/stopmachine",methods=['POST'])
 def stopMachine():
     try:
-
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId
+        response = openstack.stopInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
-
 
 @application.route("/startmachine",methods=['POST'])
 def startMachine():
     try:
-
         machineId = request.json['id']
-        db.Machines.remove({'_id':ObjectId(machineId)})
-        return jsonify(status='OK',message='deletion successful')
-
-
+        print machineId
+        response = openstack.startInstance(mytoken, machineId)
+        return jsonify(response)
     except Exception, e:
         return jsonify(status='ERROR',message=str(e))
 
